@@ -1,10 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"log/slog"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -39,37 +42,66 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Couldn't parse form data", err)
+		return
 	}
 
 	mFile, mFileHeader, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't find thumbnail", err)
+		return
 	}
 
-	thumbnailBytes, err := io.ReadAll(mFile)
+	//thumbnailBytes, err := io.ReadAll(mFile)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't read video", err)
+		return
 	}
 
 	video, err := cfg.db.GetVideo(videoID)
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't find video", err)
+		return
 	}
 
 	if video.UserID != userID {
 		respondWithError(w, http.StatusUnauthorized, "User is not authorized to modify this resource", err)
+		return
 	}
 
-	fileInBase64 := base64.StdEncoding.EncodeToString(thumbnailBytes)
 	mediaType := mFileHeader.Header.Get("Content-Type")
+	if mediaType == "" {
+		respondWithError(w, http.StatusBadRequest, "Missing Content-Type for humbnail", nil)
+		return
+	}
 
-	url := fmt.Sprintf("data:%s;base64,%v", mediaType, fileInBase64)
+	extensions, err := mime.ExtensionsByType(mediaType)
+	if err != nil || len(extensions) == 0 {
+		respondWithError(w, http.StatusBadRequest, "Missing Content-Type for thumbnail", err)
+	}
+
+	slog.Info("media type:", extensions)
+	fileName := fmt.Sprintf("%s%s", videoID, extensions[0])
+	slog.Info("file name:", fileName)
+	filePath := filepath.Join(cfg.assetsRoot, fileName)
+	filePointer, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create file", err)
+		return
+	}
+
+	_, err = io.Copy(filePointer, mFile)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to copy file contents", err)
+		return
+	}
+	url := fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, fileName)
 	video.ThumbnailURL = &url
 	err = cfg.db.UpdateVideo(video)
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update video", err)
+		return
 	}
 
 	respondWithJSON(w, http.StatusOK, video)
