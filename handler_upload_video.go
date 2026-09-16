@@ -118,11 +118,26 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	fileName = fmt.Sprintf("%s/%s", prefix, fileName)
 	slog.Info("This is what became of my prefix:", "fileName", fileName)
 
-	filePointer.Seek(0, io.SeekStart)
+	fastVideoPath, err := processVideoForFastStart(filePointer.Name())
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't calculate moov start", err)
+		return
+	}
+
+	fastVideo, err := os.Open(fastVideoPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't open fast video", err)
+		return
+	}
+
+	defer os.Remove(fastVideo.Name())
+	defer fastVideo.Close()
+
+	fastVideo.Seek(0, io.SeekStart)
 	cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &fileName,
-		Body:        filePointer,
+		Body:        fastVideo,
 		ContentType: &mt,
 	},
 	)
