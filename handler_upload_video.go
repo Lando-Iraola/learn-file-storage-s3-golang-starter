@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -107,6 +108,16 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Failed to copy file contents", err)
 		return
 	}
+
+	prefix, err := getVideoAspectRatio(filePointer.Name())
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to calculate aspect ratio", err)
+		return
+	}
+
+	fileName = fmt.Sprintf("%s/%s", prefix, fileName)
+	slog.Info("This is what became of my prefix:", "fileName", fileName)
+
 	filePointer.Seek(0, io.SeekStart)
 	cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,

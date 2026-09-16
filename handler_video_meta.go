@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"os/exec"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
@@ -117,4 +120,51 @@ func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Reque
 	}
 
 	respondWithJSON(w, http.StatusOK, videos)
+}
+
+type Streams struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type Ffprobe struct {
+	Streams []Streams `json:"streams"`
+}
+
+func getVideoAspectRatio(videoPath string) (string, error) {
+
+	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", videoPath)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	var f Ffprobe
+	err = json.Unmarshal(output.Bytes(), &f)
+	if err != nil {
+		return "", err
+	}
+
+	height := f.Streams[0].Height
+	width := f.Streams[0].Width
+
+	ratio := float32(width) / float32(height)
+
+	slog.Info("heigth", "", height)
+	slog.Info("width", "", width)
+	slog.Info("ratio", "", ratio)
+
+	var aspectRatio string
+
+	if ratio > 1.75 && ratio < 1.80 {
+		aspectRatio = "landscape"
+	} else if ratio > 0.55 && ratio < 0.57 {
+		aspectRatio = "portrait"
+	} else {
+		aspectRatio = "other"
+	}
+
+	return aspectRatio, nil
 }
