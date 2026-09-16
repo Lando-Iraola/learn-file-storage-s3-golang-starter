@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -51,7 +50,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	//thumbnailBytes, err := io.ReadAll(mFile)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't read video", err)
 		return
@@ -75,14 +73,25 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	mt, _, err := mime.ParseMediaType(mediaType)
+
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to parse Content-Type", err)
+		return
+	}
+
+	if mt != "image/jpeg" && mt != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Media-Type not accepted", nil)
+		return
+	}
+
 	extensions, err := mime.ExtensionsByType(mediaType)
 	if err != nil || len(extensions) == 0 {
 		respondWithError(w, http.StatusBadRequest, "Missing Content-Type for thumbnail", err)
+		return
 	}
 
-	slog.Info("media type:", extensions)
 	fileName := fmt.Sprintf("%s%s", videoID, extensions[0])
-	slog.Info("file name:", fileName)
 	filePath := filepath.Join(cfg.assetsRoot, fileName)
 	filePointer, err := os.Create(filePath)
 	if err != nil {
