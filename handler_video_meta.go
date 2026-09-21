@@ -2,16 +2,11 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os/exec"
-	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/google/uuid"
@@ -103,14 +98,7 @@ func (cfg *apiConfig) handlerVideoGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	presignedVideo, err := cfg.dbVideoToSignedVideo(video)
-
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't generate presigned url", err)
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, presignedVideo)
+	respondWithJSON(w, http.StatusOK, video)
 }
 
 func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Request) {
@@ -129,20 +117,6 @@ func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't retrieve videos", err)
 		return
-	}
-
-	for index, video := range videos {
-		if video.VideoURL == nil {
-			continue
-		}
-		presignedVideo, err := cfg.dbVideoToSignedVideo(video)
-
-		if err != nil {
-			respondWithError(w, http.StatusInternalServerError, "Couldn't generate presigned url", err)
-			return
-		}
-
-		videos[index].VideoURL = presignedVideo.VideoURL
 	}
 
 	respondWithJSON(w, http.StatusOK, videos)
@@ -206,38 +180,4 @@ func processVideoForFastStart(filePath string) (string, error) {
 	}
 
 	return newFilePath, nil
-}
-
-func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
-	presigClient := s3.NewPresignClient(s3Client)
-	obj, err := presigClient.PresignGetObject(context.Background(),
-		&s3.GetObjectInput{Bucket: &bucket, Key: &key},
-		s3.WithPresignExpires(expireTime))
-
-	if err != nil {
-		return "", err
-	}
-
-	return obj.URL, nil
-}
-
-func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
-	if video.VideoURL == nil {
-		return video, nil
-	}
-
-	dbParts := video.VideoURL
-	parts := strings.Split(*dbParts, ",")
-	if len(parts) != 2 {
-		return video, fmt.Errorf("Couldn't parse video URL from database")
-	}
-	url, err := generatePresignedURL(cfg.s3Client, parts[0], parts[1], time.Hour)
-	if err != nil {
-		return video, err
-	}
-
-	video.VideoURL = &url
-
-	return video, nil
-
 }
